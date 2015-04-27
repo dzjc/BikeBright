@@ -2,7 +2,7 @@
  * BrightBike - a simple led strip controller
  *
  * main.c
- * last edited 3/04/2015
+ * last edited 27/04/2015
  */
 
 #include <stdint.h>
@@ -46,18 +46,30 @@ void main(void) {
    P1IE |= BIT3; // P1.3 interrupt enabled
    P1IES |= BIT1; // P1.3 Hi/lo edge
    P1IFG &= ~BIT3; // P1.3 IFG cleared
-
+   /*Intialise ADC for battery voltage sensing
+    */
+   ADC10CTL0 = SREF_1|ADC10SR|REFON|ADC10SHT_2|ADC10ON; //Internal 1.5v ref.
+   ADC10CTL1 = ADC10SSEL_3|INCH_11; //SMCLK, input (Vcc-Vss)/2
+   __delay_cycles(1000); //Wait for ADC ref to settle.
+   ADC10CTL0 |= ENC + ADC10SC; //Start sampling & conversion.
    /*Initialise TimerA
-   */
+    */
    TACCR0 = 0x00FF;    //Timer Period ~10ms / ~100Hz
    TACCTL1 = OUTMOD_7; //Set-Reset mode.
    TACCR1 = 0x005F;    //Set PWM pulse width to max.
    TACTL = TASSEL_2 | MC_1 |TAIE;
 
-   //Infinite loop to update CCR1 value.
+   //Infinte loop to update CCR1 value.
    uint16_t i = 0;
    while(1){
       _BIS_SR(LPM1_bits + GIE); //Enter LPM1 with interrupts.
+      //Measure battery voltage
+      while(ADC10CTL1 & BUSY); //Wait for conversion.
+      if(ADC10MEM <= 682){ //Less than 2 volts
+         P1OUT &= ~BIT7;   //Switch off indicator led
+      }
+      ADC10CTL0&=~(ENC+ADC10ON); //return to wait for ENC state.
+
       switch(mode){
       case FULL:
          P1OUT|=BIT7;
@@ -121,5 +133,6 @@ __interrupt void Port_1(void){
 #pragma vector=TIMER0_A1_VECTOR
 __interrupt void  Timer_1(void){
    TACTL &= ~TAIFG;
+   ADC10CTL0 |= ENC + ADC10SC; //Start sampling & conversion.
    LPM1_EXIT; //Return to active mode to service CCR1.
 }
